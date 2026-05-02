@@ -1,0 +1,113 @@
+name: CD – Production
+
+on:
+  push:
+    branches: [main]
+
+env:
+  ENVIRONMENT: production
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: platform-ops
+  K8S_NAMESPACE: portfolio
+
+jobs:
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production   # Requires manual approval in GitHub Environments
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve image tag
+        id: image
+        run: |
+          TAG="sha-$(git rev-parse --short HEAD)"
+          URI="${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${TAG}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "uri=${URI}" >> "$GITHUB_OUTPUT"
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region "${{ env.AWS_REGION }}" \
+            --name "platform-ops-${{ env.ENVIRONMENT }}"
+
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+          kubectl apply -f k8s/secret.yaml
+          kubectl set image deployment/platform-ops-api \
+            api="${{ steps.image.outputs.uri }}" \
+            -n "${{ env.K8S_NAMESPACE }}"
+          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/ingress.yaml
+          kubectl apply -f k8s/hpa.yaml
+          kubectl apply -f k8s/pdb.yaml
+          kubectl apply -f k8s/networkpolicy.yaml
+
+      - name: Annotate Grafana deploy event
+        env:
+          GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+          GRAFANA_API_KEY: ${{ secrets.GRAFANA_API_KEY }}
+        run: |
+          curl -s -X POST "${GRAFANA_URL}/api/annotations" \
+            -H "Authorization: Bearer ${GRAFANA_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"text\": \"Production deploy: ${{ steps.image.outputs.tag }} by ${{ github.actor }}\",
+              \"tags\": [\"deploy\", \"production\"]
+            }"
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/platform-ops-api \
+            -n "${{ env.K8S_NAMESPACE }}" \
+            --timeout=10m
+
+      - name: Health check
+        id: healthcheck
+        run: |
+          INGRESS_IP=$(kubectl get ingress platform-ops-api \
+            -n "${{ env.K8S_NAMESPACE }}" \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          for i in $(seq 1 5); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${INGRESS_IP}/health" --insecure)
+            echo "Attempt $i: HTTP $STATUS"
+            [ "$STATUS" = "200" ] && { echo "Health check passed"; exit 0; }
+            sleep 10
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.healthcheck.outcome == 'failure'
+        run: |
+          echo "Rolling back production deployment"
+          kubectl rollout undo deployment/platform-ops-api \
+            -n "${{ env.K8S_NAMESPACE }}"
+          kubectl rollout status deployment/platform-ops-api \
+            -n "${{ env.K8S_NAMESPACE }}" \
+            --timeout=5m
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          curl -s -X POST "${SLACK_WEBHOOK}" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \":rotating_light: Production deploy FAILED for commit ${{ steps.image.outputs.tag }}. Rollback initiated.\"}"

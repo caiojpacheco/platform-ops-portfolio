@@ -1,0 +1,98 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-ops-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: platform-ops.availability
+      interval: 30s
+      rules:
+        - alert: HighErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{namespace="portfolio", status_code=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{namespace="portfolio"}[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            namespace: portfolio
+          annotations:
+            summary: "High error rate on platform-ops-api"
+            description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes (threshold: 5%)."
+
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="portfolio"}[10m]) > 3
+          for: 2m
+          labels:
+            severity: critical
+            namespace: portfolio
+          annotations:
+            summary: "Pod is crash-looping"
+            description: "Pod {{ $labels.pod }} in namespace {{ $labels.namespace }} has restarted {{ $value }} times in the last 10 minutes."
+
+    - name: platform-ops.resources
+      interval: 60s
+      rules:
+        - alert: HighMemoryUsage
+          expr: |
+            (
+              container_memory_working_set_bytes{namespace="portfolio", container="api"}
+              /
+              kube_pod_container_resource_limits{namespace="portfolio", resource="memory", container="api"}
+            ) > 0.80
+          for: 5m
+          labels:
+            severity: warning
+            namespace: portfolio
+          annotations:
+            summary: "High memory usage on platform-ops-api"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is using {{ $value | humanizePercentage }} of its memory limit."
+
+        - alert: HighCPUUsage
+          expr: |
+            (
+              rate(container_cpu_usage_seconds_total{namespace="portfolio", container="api"}[5m])
+              /
+              kube_pod_container_resource_limits{namespace="portfolio", resource="cpu", container="api"}
+            ) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            namespace: portfolio
+          annotations:
+            summary: "High CPU usage on platform-ops-api"
+            description: "Container {{ $labels.container }} CPU usage is {{ $value | humanizePercentage }} of its limit."
+
+        - alert: HPAMaxReplicasReached
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="portfolio"}
+            == kube_horizontalpodautoscaler_spec_max_replicas{namespace="portfolio"}
+          for: 15m
+          labels:
+            severity: warning
+            namespace: portfolio
+          annotations:
+            summary: "HPA has reached maximum replicas"
+            description: "HPA {{ $labels.horizontalpodautoscaler }} is at its maximum replica count. Consider increasing maxReplicas."
+
+    - name: platform-ops.latency
+      rules:
+        - alert: HighP99Latency
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{namespace="portfolio"}[5m]))
+              by (le, endpoint)
+            ) > 2.0
+          for: 5m
+          labels:
+            severity: warning
+            namespace: portfolio
+          annotations:
+            summary: "High p99 latency detected"
+            description: "p99 latency for {{ $labels.endpoint }} is {{ $value }}s (threshold: 2s)."
