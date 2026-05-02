@@ -1,8 +1,8 @@
 # platform-ops-portfolio
 
-[![CI](https://github.com/YOUR_USERNAME/platform-ops-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/platform-ops-portfolio/actions/workflows/ci.yml)
-[![CD Staging](https://github.com/YOUR_USERNAME/platform-ops-portfolio/actions/workflows/cd-staging.yml/badge.svg)](https://github.com/YOUR_USERNAME/platform-ops-portfolio/actions/workflows/cd-staging.yml)
-[![CD Production](https://github.com/YOUR_USERNAME/platform-ops-portfolio/actions/workflows/cd-production.yml/badge.svg)](https://github.com/YOUR_USERNAME/platform-ops-portfolio/actions/workflows/cd-production.yml)
+[![CI](https://github.com/caiojpacheco/platform-ops-portfolio/actions/workflows/ci.yml/badge.svg)](https://github.com/caiojpacheco/platform-ops-portfolio/actions/workflows/ci.yml)
+[![CD Staging](https://github.com/caiojpacheco/platform-ops-portfolio/actions/workflows/cd-staging.yml/badge.svg)](https://github.com/caiojpacheco/platform-ops-portfolio/actions/workflows/cd-staging.yml)
+[![CD Production](https://github.com/caiojpacheco/platform-ops-portfolio/actions/workflows/cd-production.yml/badge.svg)](https://github.com/caiojpacheco/platform-ops-portfolio/actions/workflows/cd-production.yml)
 [![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?logo=terraform&logoColor=white)](https://www.terraform.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?logo=docker&logoColor=white)](https://hub.docker.com/)
@@ -121,7 +121,7 @@ AWS account with permissions to create VPC, EKS, ECR, RDS, and IAM resources.
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/platform-ops-portfolio.git
+git clone https://github.com/caiojpacheco/platform-ops-portfolio.git
 cd platform-ops-portfolio
 cp .env.example .env        # fill in your values
 ```
